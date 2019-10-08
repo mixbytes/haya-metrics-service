@@ -2,26 +2,27 @@ const config = require('../config/config');
 
 class DbRequests {
     constructor(mongoClient) {
-        this.db = mongoClient.db("EOS");
+        this.db = mongoClient.db(mongoClient.s.options.dbName);
     }
 
     async update() {
+        // TODO: Check if we will calculate activeStakeTotal via this tool or some contract in blockchain
         let result = await Promise.all([
-            this.volumePastDay(),
-            this.volumePastMonth(),
             this.volumeTotal(),
             this.createdAccountsTotal(),
             this.createdSmartContractsTotal(),
             this.activeAccountsDaily(),
+            // this.activeStakeTotal(),
         ]);
 
         return {
-            volumePastDay: result[0],
-            volumePastMonth: result[1],
-            volumeTotal: result[2],
-            createdAccountsTotal: result[3],
-            createdSmartContractsTotal: result[4],
-            activeAccountsDaily: result[5],
+            volumeTotal: {value: result[0], type: "counter"},
+            createdAccountsTotal: {value: result[1], type: "counter"},
+            createdSmartContractsTotal: {value: result[2], type: "counter"},
+            activeAccountsDaily: {value: result[3], type: "gauge"},
+            // stakeNetQuantityTotal: {value: result[4][0], type: "counter"},
+            // stakeCpuQuantityTotal: {value: result[4][1], type: "counter"},
+            // stakeVoteQuantityTotal: {value: result[4][2], type: "counter"},
         }
     }
 
@@ -31,28 +32,10 @@ class DbRequests {
         return lastDate;
     }
 
-    monthly() {
-        const lastDate = new Date();
-        lastDate.setTime(lastDate.getTime() - 1000 * 60 * 60 * 24 * 30);
-        return lastDate;
-    }
-
-    // Volume part
-
-    async _volumePastDate(date) {
-        let dateParam = {};
-        if (date) {
-            dateParam = {
-                "createdAt": {
-                    $gte: date
-                },
-            }
-        }
-
+    async volumeTotal() {
         let queryRes = await this.db.collection("action_traces").aggregate([
             {
                 $match: {
-                    ...dateParam,
                     "act.account": config.tokenAccount,
                     "act.name": "transfer",
                     "act.data.quantity": {$regex: ".* " + config.baseToken + "$"}
@@ -81,20 +64,6 @@ class DbRequests {
         return 0;
     }
 
-    async volumeTotal() {
-        return this._volumePastDate(null);
-    }
-
-    async volumePastDay() {
-        return this._volumePastDate(this.daily());
-    }
-
-    async volumePastMonth() {
-        return this._volumePastDate(this.monthly());
-    }
-
-    // Created smart contracts part
-
     async createdSmartContractsTotal() {
         let queryRes = await this.db.collection("action_traces").aggregate([
             {
@@ -113,8 +82,6 @@ class DbRequests {
         }
         return 0;
     }
-
-    // Created accounts part
 
     async createdAccountsTotal() {
         let queryRes = await this.db.collection("action_traces").aggregate([
@@ -135,6 +102,56 @@ class DbRequests {
         return 0;
     }
 
+    async activeStakeTotal() {
+        let queryRes = await this.db.collection("action_traces").aggregate([
+            {
+                $match: {
+                    "act.account": "eosio",
+                    "act.name": "delegatebw",
+                }
+            },
+            {
+                $project: {
+                    stakeNetQuantity: {
+                        $toDecimal: {
+                            $arrayElemAt: [{
+                                $split: ["$act.data.stake_net_quantity", " "],
+                            }, 0],
+                        },
+                    },
+                    stakeCpuQuantity: {
+                        $toDecimal: {
+                            $arrayElemAt: [{
+                                $split: ["$act.data.stake_cpu_quantity", " "],
+                            }, 0],
+                        },
+                    },
+                    stakeVoteQuantity: {
+                        $toDecimal: {
+                            $arrayElemAt: [{
+                                $split: ["$act.data.stake_vote_quantity", " "],
+                            }, 0],
+                        },
+                    },
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    stakeNetQuantityTotal: {$sum: "stakeNetQuantity"},
+                    stakeCpuQuantityTotal: {$sum: "stakeCpuQuantity"},
+                    stakeVoteQuantityTotal: {$sum: "stakeVoteQuantity"}
+                }
+            }
+        ])
+            .toArray();
+
+        if (queryRes.length !== 0) {
+            return Object.values(queryRes[0]).map(value => Number(value.toString()));
+        }
+        return 0;
+    }
+
     async activeAccountsDaily() {
         let queryRes = await this.db.collection("action_traces").aggregate([
             {
@@ -145,12 +162,14 @@ class DbRequests {
                 }
             },
             {
-                $group: { _id: "$act.authorization.actor"}
+                $group: {_id: "$act.authorization.actor"}
             },
             {
-                $group: { _id: null, count: {
+                $group: {
+                    _id: null, count: {
                         $sum: 1
-                    }}
+                    }
+                }
             },
         ]).toArray();
 

@@ -12,8 +12,6 @@ const PrometheusMetrics = require('./prometheus/prometheus-metrics');
 
 new Promise(async () => {
 
-    const prometheusMetrics = new PrometheusMetrics();
-
     console.log("Haya-metrics-service is checking haya node...");
 
     const hayaRequests = new HayaRequests(new JsonRpc(
@@ -26,6 +24,8 @@ new Promise(async () => {
     console.log("Haya-metrics-service connected to node, connecting to mongodb...");
 
     let mongoClient = await require("mongodb")(config.mongodbUrl, {useNewUrlParser: true, useUnifiedTopology: true});
+    if (!mongoClient.s.options.dbName)
+        throw new Error("Please specify mongodb database name in the connection string");
 
     console.log("Haya-metrics-service is connected to mongoDB, getting mongoDB initial data...");
 
@@ -33,6 +33,8 @@ new Promise(async () => {
     let mongoData = await dbRequests.update();
 
     console.log("Initial database data fetched, starting server...");
+
+    const prometheusMetrics = new PrometheusMetrics({...mongoData, ...hayaData});
 
     const app = express();
 
@@ -49,7 +51,7 @@ new Promise(async () => {
         const setUpdateDbTimeout = () => {
             setTimeout(async () => {
                 mongoData = await dbRequests.update();
-                prometheusMetrics.updateMongoData(mongoData);
+                prometheusMetrics.updateData(mongoData);
                 setUpdateDbTimeout();
             }, config.dbUpdatePeriod);
         };
@@ -57,7 +59,7 @@ new Promise(async () => {
         const setUpdateHayaTimeout = () => {
             setTimeout(async () => {
                 hayaData = await hayaRequests.update();
-                prometheusMetrics.updateHayaData(hayaData);
+                prometheusMetrics.updateData(hayaData);
                 setUpdateHayaTimeout();
             }, config.hayaUpdatePeiod);
         };
