@@ -13,7 +13,7 @@ class HayaRequests {
         })).rows[0];
 
         return {
-            totalActivatedStake: {value: Number(global.total_activated_stake), type: "gauge"},
+            totalActivatedStake: {value: Number((global.active_stake * 1) / 10000), type: "gauge"},
             totalRamStake: {value: Number(global.total_ram_stake), type: "gauge"},
         };
     }
