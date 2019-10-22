@@ -2,7 +2,7 @@ const express = require('express');
 const fetch = require("node-fetch");
 const {JsonRpc} = require('eosjs');
 
-const {normalizePort} = require('./tools/tools');
+const {normalizePort, retry} = require('./tools/tools');
 
 const config = require('./config/config');
 const DbRequests = require('./db/db-requests');
@@ -19,18 +19,25 @@ new Promise(async () => {
         {fetch}
     ));
 
-    let hayaData = await hayaRequests.update();
+    let hayaData = await retry(hayaRequests, hayaRequests.update, 1000);
 
     console.log("Haya-metrics-service connected to node, connecting to mongodb...");
 
-    let mongoClient = await require("mongodb")(config.mongodbUrl, {useNewUrlParser: true, useUnifiedTopology: true});
+    let mongoClient = await retry(
+        null,
+        require("mongodb"),
+        1000,
+        config.mongodbUrl,
+        {useNewUrlParser: true, useUnifiedTopology: true}
+    );
+
     if (!mongoClient.s.options.dbName)
         throw new Error("Please specify mongodb database name in the connection string");
 
     console.log("Haya-metrics-service is connected to mongoDB, getting mongoDB initial data...");
 
     const dbRequests = new DbRequests(mongoClient);
-    let mongoData = await dbRequests.update();
+    let mongoData = await retry(dbRequests, dbRequests.update, 1000);
 
     console.log("Initial database data fetched, starting server...");
 
@@ -50,7 +57,7 @@ new Promise(async () => {
 
         const setUpdateDbTimeout = () => {
             setTimeout(async () => {
-                mongoData = await dbRequests.update();
+                mongoData = await retry(dbRequests, dbRequests.update);
                 prometheusMetrics.updateData(mongoData);
                 setUpdateDbTimeout();
             }, config.dbUpdatePeriod);
@@ -58,7 +65,7 @@ new Promise(async () => {
 
         const setUpdateHayaTimeout = () => {
             setTimeout(async () => {
-                hayaData = await hayaRequests.update();
+                hayaData = await retry(hayaRequests, hayaRequests.update);
                 prometheusMetrics.updateData(hayaData);
                 setUpdateHayaTimeout();
             }, config.hayaUpdatePeiod);
