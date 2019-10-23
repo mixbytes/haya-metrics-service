@@ -13,4 +13,28 @@ function normalizePort(val) {
     return false;
 }
 
-module.exports = {normalizePort};
+function timeout(delay) {
+    return new Promise(resolve => {
+        setTimeout(resolve, delay);
+    })
+}
+
+async function retry(obj, func, delay, ...args) {
+    let retryCounter = 0;
+    let lastError = null;
+    while (true) {
+        try {
+            return await func.apply(obj, args);
+        } catch (e) {
+            retryCounter++;
+            if (!lastError || e.toString() !== lastError.toString()) {
+                console.warn(e);
+                lastError = e;
+            }
+            console.warn("Retrying " + retryCounter + "...");
+            await timeout(delay);
+        }
+    }
+}
+
+module.exports = {normalizePort, retry};
