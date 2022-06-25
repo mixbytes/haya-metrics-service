@@ -12,7 +12,7 @@
     "eosjs": "^20.0.0",
     "express": "4.17.1",
     "mongodb": "^3.3.2",
-    "node-fetch": "^2.6.0",
+    "node-fetch": "^2.6.7",
     "prom-client": "^11.5.3"
   },
   "devDependencies": {
